@@ -1,8 +1,6 @@
 import { spawn } from 'node:child_process'
 
-export const FORK_COMMANDS = ['fork', 'branch'] as const
-
-export type ForkCommand = (typeof FORK_COMMANDS)[number]
+export type ForkCommand = 'fork' | 'branch'
 
 export interface RexTabInput {
   readonly session: string
@@ -16,17 +14,22 @@ export interface RexTabResult {
   readonly stderr: string
 }
 
-/** `/fork fix the tests` -> `fix the tests` */
+/** `/branch fix/tests` -> `fix/tests` */
 export function commandArguments(command: ForkCommand, input: string | undefined): string {
   const text = (input ?? '').trim()
   const prefix = `/${command}`
   return text.startsWith(prefix) ? text.slice(prefix.length).trim() : text
 }
 
-/** Builds the argv that opens the forked OpenCode session in a new Rex tab. */
+/**
+ * Builds the argv that opens the forked OpenCode session in a new Rex tab.
+ * `--interactive` sources the shell's interactive config, so settings from
+ * ~/.zshrc (for example HERDR_ENV) behave the same as in the current tab.
+ */
 export function rexTabArguments(input: RexTabInput): string[] {
   return [
     'run',
+    '--interactive',
     '-s',
     input.session,
     '-c',

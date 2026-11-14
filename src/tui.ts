@@ -1,11 +1,13 @@
 import { Plugin } from '@opencode/plugin/tui'
 import type { Context } from '@opencode/plugin/tui/context'
 import type { ToastVariant } from '@opencode/plugin/tui/context'
-import { FORK_COMMANDS, commandArguments, errorMessage, runRexTab, type ForkCommand } from './rex'
+import { commandArguments, errorMessage, runRexTab, type ForkCommand } from './rex'
 
 const TITLE = 'rex-fork'
+const FULL_SESSION = 'full'
 
 type ForkedSession = Awaited<ReturnType<Context['client']['session']['fork']>>
+type ForkBoundary = typeof FULL_SESSION | string
 type OpenResult = 'no-rex' | 'opened' | 'failed'
 
 function toast(context: Context, message: string, variant: ToastVariant, sessionID?: string) {
@@ -21,9 +23,13 @@ function currentSessionID(context: Context): string | undefined {
   return route.type === 'session' ? route.sessionID : undefined
 }
 
-async function forkSession(context: Context, sessionID: string): Promise<ForkedSession | undefined> {
+async function forkSession(
+  context: Context,
+  sessionID: string,
+  before?: string,
+): Promise<ForkedSession | undefined> {
   try {
-    return await context.client.session.fork({ sessionID })
+    return await context.client.session.fork({ sessionID, before })
   } catch (error) {
     toast(context, `could not fork: ${errorMessage(error)}`, 'error')
     return undefined
@@ -35,15 +41,6 @@ async function nameSession(context: Context, sessionID: string, name: string) {
     await context.client.session.update({ sessionID, title: name })
   } catch (error) {
     toast(context, `could not name the session: ${errorMessage(error)}`, 'error', sessionID)
-  }
-}
-
-async function sendPrompt(context: Context, sessionID: string, text: string) {
-  if (!text) return
-  try {
-    await context.client.session.prompt({ sessionID, text })
-  } catch (error) {
-    toast(context, `could not send the prompt: ${errorMessage(error)}`, 'error', sessionID)
   }
 }
 
@@ -67,26 +64,18 @@ async function openInRex(context: Context, command: ForkCommand, forked: ForkedS
   }
 }
 
-async function runCommand(context: Context, command: ForkCommand, input: string | undefined) {
-  const sessionID = currentSessionID(context)
-  if (!sessionID) {
-    toast(context, `open a session before running /${command}`, 'warning')
-    return
-  }
-
-  const argument = commandArguments(command, input)
-  const forked = await forkSession(context, sessionID)
-  if (!forked) return
-
-  if (command === 'branch' && argument) {
-    await nameSession(context, forked.id, argument)
-  }
+async function openFork(
+  context: Context,
+  command: ForkCommand,
+  forked: ForkedSession,
+  name?: string,
+) {
+  if (name) await nameSession(context, forked.id, name)
 
   const rex = await openInRex(context, command, forked)
   if (rex === 'failed') return
 
   if (rex === 'opened') {
-    if (command === 'fork') await sendPrompt(context, forked.id, argument)
     toast(context, 'Forked to new Rex tab.', 'success')
     return
   }
@@ -95,8 +84,61 @@ async function runCommand(context: Context, command: ForkCommand, input: string 
   if (!context.ui.tabs.focus(forked.id)) {
     context.ui.router.navigate({ type: 'session', sessionID: forked.id })
   }
-  if (command === 'fork') await sendPrompt(context, forked.id, argument)
   toast(context, 'Forked session.', 'success')
+}
+
+async function chooseForkBoundary(context: Context, sessionID: string): Promise<ForkBoundary | undefined> {
+  await context.data.session.message.sync(sessionID).catch(() => undefined)
+
+  const options = [
+    { title: 'Full session', value: FULL_SESSION, description: 'Copy the whole conversation' },
+    ...context.data.session.message
+      .list(sessionID)
+      .filter(message => message.type === 'user')
+      .toReversed()
+      .map(message => ({
+        title: message.text.replace(/\s+/g, ' ').trim(),
+        value: message.id,
+        footer: new Date(message.time.created).toLocaleString(),
+      })),
+  ]
+
+  return context.ui.dialog.select({
+    title: 'Fork session',
+    placeholder: 'Choose where to fork from',
+    options,
+  })
+}
+
+/** Takes over OpenCode's own `session.fork` command: same picker, Rex tab. */
+async function runFork(context: Context) {
+  const sessionID = currentSessionID(context)
+  if (!sessionID) {
+    toast(context, 'open a session before running /fork', 'warning')
+    return
+  }
+
+  const boundary = await chooseForkBoundary(context, sessionID)
+  if (boundary === undefined) return
+
+  const forked = await forkSession(context, sessionID, boundary === FULL_SESSION ? undefined : boundary)
+  if (!forked) return
+
+  await openFork(context, 'fork', forked)
+}
+
+async function runBranch(context: Context, input: string | undefined) {
+  const sessionID = currentSessionID(context)
+  if (!sessionID) {
+    toast(context, 'open a session before running /branch', 'warning')
+    return
+  }
+
+  const name = commandArguments('branch', input)
+  const forked = await forkSession(context, sessionID)
+  if (!forked) return
+
+  await openFork(context, 'branch', forked, name)
 }
 
 export default Plugin.define({
@@ -104,16 +146,23 @@ export default Plugin.define({
   setup(context: Context) {
     context.keymap.layer(() => ({
       mode: 'global',
-      commands: FORK_COMMANDS.map(command => ({
-        id: `rex-fork.${command}`,
-        title:
-          command === 'fork'
-            ? 'Fork conversation in a new Rex tab'
-            : 'Branch conversation in a new Rex tab',
-        group: 'Rex',
-        slash: { name: command, arguments: true as const },
-        run: (input?: string) => runCommand(context, command, input),
-      })),
+      priority: 100,
+      commands: [
+        {
+          id: 'session.fork',
+          title: 'Fork session',
+          group: 'Session',
+          slash: { name: 'fork' },
+          run: () => runFork(context),
+        },
+        {
+          id: 'rex-fork.branch',
+          title: 'Branch session',
+          group: 'Session',
+          slash: { name: 'branch', arguments: true as const },
+          run: (input?: string) => runBranch(context, input),
+        },
+      ],
     }))
   },
 })

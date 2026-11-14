@@ -8,8 +8,8 @@ Companion plugin for Claude Code: [claude-rex-fork](https://github.com/damianmar
 
 In a Rex terminal:
 
-- `/fork` opens a new tab on a fork of the conversation. `/fork <text>` sends the text as the first prompt in the fork.
-- `/branch` opens a new tab on a fork of the conversation. `/branch <name>` names the new session.
+- `/fork` opens OpenCode's fork picker (the whole conversation or a message), then opens the fork in a new Rex tab. It takes over OpenCode's own `session.fork` command, so there is still a single `/fork` entry.
+- `/branch` opens a new tab on a full fork of the conversation. `/branch <name>` names the new session.
 - If `rex` fails, the error appears in a toast.
 
 Outside Rex (`REX_SESSION` not set), the fork opens in the current OpenCode TUI instead.
@@ -17,8 +17,10 @@ Outside Rex (`REX_SESSION` not set), the fork opens in the current OpenCode TUI 
 The fork is created with OpenCode's session fork API, then the tab runs:
 
 ```
-rex run -s "$REX_SESSION" -c <session directory> --label fork -- opencode --session <fork id>
+rex run --interactive -s "$REX_SESSION" -c <session directory> --label fork -- opencode --session <fork id>
 ```
+
+`--interactive` sources the interactive shell config, so settings from `~/.zshrc` (for example `HERDR_ENV`, which hides OpenCode's tab strip) behave the same in the new tab as in the current one.
 
 ## Install
 
