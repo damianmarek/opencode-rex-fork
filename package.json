@@ -1,0 +1,31 @@
+{
+  "name": "opencode-rex-fork",
+  "version": "0.1.0",
+  "description": "OpenCode plugin: /fork and /branch open the forked conversation in a new Rex tab",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/server.ts",
+    "./tui": "./src/tui.ts"
+  },
+  "files": ["src"],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["opencode", "opencode-plugin", "rex", "fork", "terminal"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/damianmarek/opencode-rex-fork.git"
+  },
+  "homepage": "https://github.com/damianmarek/opencode-rex-fork#readme",
+  "bugs": {
+    "url": "https://github.com/damianmarek/opencode-rex-fork/issues"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
